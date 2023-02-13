@@ -18,9 +18,9 @@ class mainController extends Controller
         exec("chmod -R 777 code/*");
         exec("echo '$request->input' > code/$id/code.c");
 
-        $file = fopen("webdictionary.txt", "r") or die("Unable to open file!");
-        echo fread($file,filesize("webdictionary.txt"));
-        fclose($file);
+        // $file = fopen("webdictionary.txt", "r") or die("Unable to open file!");
+        // $result = fread($file,filesize("webdictionary.txt"));
+        // fclose($file);
 
         $result = $request->input;
         return response()->json($result);
