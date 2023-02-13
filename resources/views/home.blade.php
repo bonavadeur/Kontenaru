@@ -19,7 +19,7 @@
 
         <div class="row justify-content-center">
             <div class="col-8">
-                <textarea class="form-control" placeholder="Nhập đoạn code cần chạy vào đây" id="input" style="height: 100px"></textarea>
+                <textarea class="form-control" placeholder="Nhập đoạn code cần chạy vào đây" id="input" style="height: 300px"></textarea>
                 <button type="button" class="btn btn-danger" id="submit">Chạy code</button>
                 <!-- <label for="floatingTextarea2">Comments</label> -->
             </div>
@@ -28,7 +28,7 @@
         <div class="row justify-content-center">
             <div class="col-8">
                 <label for="result">Kết quả</label>
-                <textarea class="form-control" id="result" style="height: 100px;" readonly>
+                <textarea class="form-control" id="result" style="height: 150px;" readonly>
                 </textarea>
             </div>
         </div>

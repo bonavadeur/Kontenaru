@@ -18,11 +18,13 @@ class mainController extends Controller
         exec("chmod -R 777 code/*");
         exec("echo '$request->input' > code/$id/code.c");
 
-        // $file = fopen("webdictionary.txt", "r") or die("Unable to open file!");
-        // $result = fread($file,filesize("webdictionary.txt"));
-        // fclose($file);
+        exec("sudo ./script.sh -a 10.42.0.3 -i $id");
 
-        $result = $request->input;
+        $file = fopen("code/$id/output.txt", "r") or die("Unable to open file!");
+        $result = fread($file,filesize("code/$id/output.txt"));
+        fclose($file);
+
+        // $result = $request->input;
         return response()->json($result);
     }
 }
