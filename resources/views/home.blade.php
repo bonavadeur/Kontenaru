@@ -37,10 +37,10 @@
     <script type="text/javascript" src="resources/js/jquery-3.6.0.js"></script>
     <script type="text/javascript">
         $("#submit").click(function() {
-            $("#result").text("");
+            $("#result").text("Chờ xíu nha đang chạy sắp xong òy . . . >o<");
             body = {
                 input: $("#input").val(),
-                id: Math.floor(Math.random() * 10)
+                id: Math.round(Math.random() * 10000)
             };
             // console.log(body);
             body = JSON.stringify(body)

@@ -24,6 +24,8 @@ class mainController extends Controller
         $result = fread($file,filesize("code/$id/output.txt"));
         fclose($file);
 
+        exec("rm -rf code/$id");
+
         // $result = $request->input;
         return response()->json($result);
     }
