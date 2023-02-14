@@ -11,11 +11,20 @@
 </head>
 <body>
     <div class="container text-center">
+        <!-- <div class="row justify-content-center">
+            <img style="width: 25%;" src="https://aniyuki.com/wp-content/uploads/2022/05/aniyuki-anya-spy-x-family-12.gif" data-featherlight="image">
+        </div> -->
+
         <div class="row justify-content-center">
+            <div class="col-3">
+                <img style="width: 100%;" src="https://aniyuki.com/wp-content/uploads/2022/05/aniyuki-anya-spy-x-family-9.gif" data-featherlight="image">
+            </div>
             <div class="col">
                 <img src="resources/image/kontenaru.png" style="width:100%">
             </div>
         </div>
+
+        <br>
 
         <div class="row justify-content-center">
             <div class="col-6">
@@ -29,6 +38,10 @@
                 <textarea class="form-control" id="result" style="height: 380px;" readonly>
                 </textarea>
             </div>
+        </div>
+
+        <div class="row justify-content-center">
+            <img src="https://aniyuki.com/wp-content/uploads/2022/05/aniyuki-anya-spy-x-family-12.gif" data-featherlight="image">
         </div>
 
         <!-- <div class="row justify-content-center">
