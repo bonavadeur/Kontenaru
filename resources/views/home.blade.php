@@ -13,7 +13,7 @@
     <div class="container text-center">
         <div class="row justify-content-center">
             <div class="col">
-                <img src="resources/image/kontenaru.png" style="width:80%">
+                <img src="resources/image/kontenaru.png" style="width:100%">
             </div>
         </div>
 
@@ -37,7 +37,7 @@
     <script type="text/javascript" src="resources/js/jquery-3.6.0.js"></script>
     <script type="text/javascript">
         $("#submit").click(function() {
-            $("#result").text("Chờ xíu nha đang chạy sắp xong òy . . . >o<");
+            $("#result").text("Chờ xíu nha đang chạy sắp xong òy . . . >o<''");
             body = {
                 input: $("#input").val(),
                 id: Math.round(Math.random() * 10000)

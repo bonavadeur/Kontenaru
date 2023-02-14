@@ -16,13 +16,21 @@ class mainController extends Controller
         exec("mkdir code/$id");
         exec("touch code/$id/code.c");
         exec("chmod -R 777 code/*");
-        exec("echo '$request->input' > code/$id/code.c");
+
+        $file = fopen("code/$id/code.c", "w") or die("Unable to open file!");
+        fwrite($file, $request->input);
+        fclose($file);
 
         exec("sudo ./script.sh -a 10.42.0.3 -i $id");
 
-        $file = fopen("code/$id/output.txt", "r") or die("Unable to open file!");
-        $result = fread($file,filesize("code/$id/output.txt"));
-        fclose($file);
+        if(filesize("code/$id/output.txt")) {
+            $file = fopen("code/$id/output.txt", "r");
+            $result = fread($file,filesize("code/$id/output.txt"));
+            fclose($file);
+        } else {
+            $result = "";
+        }
+        
 
         exec("rm -rf code/$id");
 
