@@ -18,20 +18,26 @@
         </div>
 
         <div class="row justify-content-center">
-            <div class="col-8">
-                <textarea class="form-control" placeholder="Nhập đoạn code cần chạy vào đây" id="input" style="height: 300px"></textarea>
+            <div class="col-6">
+                <textarea class="form-control" placeholder="Nhập đoạn code cần chạy vào đây" id="input" style="height: 400px"></textarea>
                 <button type="button" class="btn btn-danger" id="submit">Chạy code</button>
                 <!-- <label for="floatingTextarea2">Comments</label> -->
             </div>
+
+            <div class="col-6">
+                <label for="result">Kết quả</label>
+                <textarea class="form-control" id="result" style="height: 380px;" readonly>
+                </textarea>
+            </div>
         </div>
 
-        <div class="row justify-content-center">
+        <!-- <div class="row justify-content-center">
             <div class="col-8">
                 <label for="result">Kết quả</label>
                 <textarea class="form-control" id="result" style="height: 150px;" readonly>
                 </textarea>
             </div>
-        </div>
+        </div> -->
     </div>
 
     <script type="text/javascript" src="resources/js/jquery-3.6.0.js"></script>
