@@ -1,2 +1,4 @@
 code/*
 rootfs.tar
+rootfs/*
+container_*/*

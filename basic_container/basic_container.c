@@ -20,23 +20,28 @@
 #include <signal.h>
 #include <stdio.h>
 #include <time.h>
+#include <sys/time.h>
+#include <sys/resource.h>
 
-/* A simple error-handling function: print an error message based
-   on the value in 'errno' and terminate the calling process */
+#define TEST1 0
+#define TEST2 0
 
+/* Ham xu ly loi */
 #define errExit(msg)    do { perror(msg); exit(EXIT_FAILURE); \
                         } while (0)
 
+/* Bridge mac dinh, phuc vu cho ket noi mang cho container*/
 #define BRIDGE "cni0"
 const char *hostname = "inside_container";
 
+/* in ra huong dan su dung chuong trinh*/
 static void usage(char *pname) {
     fprintf(stderr, "Usage: %s [options] cmd [arg...]\n", pname);
     fprintf(stderr, "Options can be:\n");
     exit(EXIT_FAILURE);
 }
 
-//wrapper for pivot root syscall
+//system call pivot_root se chuyen thu muc root cua cac process trong cung NS thanh a 
 int pivot_root(char *a, char *b) {
     if (mount(a, a, "bind", MS_BIND | MS_REC, "") < 0) {
         errExit("error mount");
@@ -47,9 +52,10 @@ int pivot_root(char *a, char *b) {
     return syscall(SYS_pivot_root, a, b);
 }
 
-/* sync primitive */
+/* pipeline -  dung de truyen thong tin giua container va host NS */
 int checkpoint[2];
 
+/* tao ki tu ngau nhien*/
 void rand_char(char *str, int size) {
     char new[size];
     for (int i = 0; i < size; i++) {
@@ -60,6 +66,7 @@ void rand_char(char *str, int size) {
     return;
 }
 
+/*Tao veth-cau noi giua container va brige, trong truong hop cac container muon ket noi voi nhay hoac noi voi may host*/
 int create_peer() {
     char *id = (char *) malloc(4);
     char *set_int;
@@ -79,6 +86,7 @@ int create_peer() {
     return 0;
 }
 
+/*Them container vao veth*/
 int network_setup(pid_t pid) {
     char *set_pid_ns;
     asprintf(&set_pid_ns, "ip link set veth1 netns %d", pid);
@@ -86,23 +94,17 @@ int network_setup(pid_t pid) {
     return 0;
 }
 
-/* Update the mapping file 'map_file', with the value provided in
-   'mapping', a string that defines a UID or GID mapping. A UID or
-   GID mapping consists of one or more newline-delimited records
-   of the form:
+/* Chinh sua file 'map_file', voi gia tri trong chuoi 'mapping', 
+   dinh nghia cach mapping UID, GID cac process trong va ngoai NS. 
+   Chuoi mapping co cau truc nhu sau:
 
        ID_inside-ns    ID-outside-ns   length
-
-   Requiring the user to supply a string that contains newlines is
-   of course inconvenient for command-line use. Thus, we permit the
-   use of commas to delimit records in this string, and replace them
-   with newlines before writing the string to the file. */
+   Viec mapping nay duoc thuc hien boi process cha nam trong host NS.
+ */
 
 static void update_map(char *mapping, char *map_file) {
     int fd, j;
-    size_t map_len;     /* Length of 'mapping' */
-
-    /* Replace commas in mapping string with newlines */
+    size_t map_len;     /* Do dai cua 'mapping' */
 
     map_len = strlen(mapping);
     for (j = 0; j < map_len; j++)
@@ -123,14 +125,13 @@ static void update_map(char *mapping, char *map_file) {
     close(fd);
 }
 
-/* Linux 3.19 made a change in the handling of setgroups(2) and the
-   'gid_map' file to address a security issue. The issue allowed
-   *unprivileged* users to employ user namespaces in order to drop
-   The upshot of the 3.19 changes is that in order to update the
-   'gid_maps' file, use of the setgroups() system call in this
-   user namespace must first be disabled by writing "deny" to one of
-   the /proc/PID/setgroups files for this namespace.  That is the
-   purpose of the following function. */
+/* Linux kernel 3.19 cap nhat lai tinh nang setgroups(2) va 'gid_map' file
+   de xu ly lo hong bao mat khi mot user khong duoc cap quyen nhung lai 
+   "lach luat" bang cach tao mot NS va cap nhat gid mapping de nhay quyen. 
+   Kernel 3.19 yeu cau, khi muon them mapping moi trong 'gid_maps' file, thi 
+   ham setgroup() cua mot trong nhung process nam trong NS moi phai bi "DENY"
+   bang cach them truong "DENY" vao /proc/PID/setgroups voi PID thuoc NS moi.
+*/
 
 static void proc_setgroups_write(pid_t child_pid, char *str) {
     char setgroups_path[PATH_MAX];
@@ -142,15 +143,8 @@ static void proc_setgroups_write(pid_t child_pid, char *str) {
     fd = open(setgroups_path, O_RDWR);
     if (fd == -1) {
 
-        /* We may be on a system that doesn't support
-           /proc/PID/setgroups. In that case, the file won't exist,
-           and the system won't impose the restrictions that Linux 3.19
-           added. That's fine: we don't need to do anything in order
-           to permit 'gid_map' to be updated.
-
-           However, if the error from open() was something other than
-           the ENOENT error that is expected for that case,  let the
-           user know. */
+        /* Voi kernel linux doi cu, chua cos co che setgroup nen folder
+           /proc/PID/setgroups khong ton tai.*/
 
         if (errno != ENOENT)
             fprintf(stderr, "ERROR: open %s: %s\n", setgroups_path,
@@ -165,59 +159,223 @@ static void proc_setgroups_write(pid_t child_pid, char *str) {
     close(fd);
 }
 
-/* Start function for cloned child */
+#define MEMORY "1073741824"
+#define SHARES "256"
+#define PIDS "64"
+#define WEIGHT "10"
+#define FD_COUNT 64
+
+struct cgrp_control {
+	char control[256];
+	struct cgrp_setting {
+		char name[256];
+		char value[256];
+	} **settings;
+};
+struct cgrp_setting add_to_tasks = {
+	.name = "tasks",
+	.value = "0"
+};
+
+struct cgrp_control *cgrps[] = {
+	& (struct cgrp_control) {
+		.control = "memory",
+		.settings = (struct cgrp_setting *[]) {
+			& (struct cgrp_setting) {
+				.name = "memory.limit_in_bytes",
+				.value = MEMORY
+			},
+			& (struct cgrp_setting) {
+				.name = "memory.kmem.limit_in_bytes",
+				.value = MEMORY
+			},
+			&add_to_tasks,
+			NULL
+		}
+	},
+	& (struct cgrp_control) {
+		.control = "cpu",
+		.settings = (struct cgrp_setting *[]) {
+			& (struct cgrp_setting) {
+				.name = "cpu.shares",
+				.value = SHARES
+			},
+			&add_to_tasks,
+			NULL
+		}
+	},
+	& (struct cgrp_control) {
+		.control = "pids",
+		.settings = (struct cgrp_setting *[]) {
+			& (struct cgrp_setting) {
+				.name = "pids.max",
+				.value = PIDS
+			},
+			&add_to_tasks,
+			NULL
+		}
+	},
+	& (struct cgrp_control) {
+		.control = "blkio",
+		.settings = (struct cgrp_setting *[]) {
+			& (struct cgrp_setting) {
+				.name = "blkio.weight",
+				.value = WEIGHT
+			},
+			&add_to_tasks,
+			NULL
+		}
+	},
+	NULL
+};
+int resources()
+{
+	fprintf(stderr, "=> setting cgroups...");
+	for (struct cgrp_control **cgrp = cgrps; *cgrp; cgrp++) {
+		char dir[PATH_MAX] = {0};
+		fprintf(stderr, "%s...", (*cgrp)->control);
+		if (snprintf(dir, sizeof(dir), "/sys/fs/cgroup/%s/%s",
+			     (*cgrp)->control, hostname) == -1) {
+			return -1;
+		}
+		if (mkdir(dir, S_IRUSR | S_IWUSR | S_IXUSR)) {
+			fprintf(stderr, "mkdir %s failed: %m\n", dir);
+			return -1;
+		}
+		for (struct cgrp_setting **setting = (*cgrp)->settings; *setting; setting++) {
+			char path[PATH_MAX] = {0};
+			int fd = 0;
+			if (snprintf(path, sizeof(path), "%s/%s", dir,
+				     (*setting)->name) == -1) {
+				fprintf(stderr, "snprintf failed: %m\n");
+				return -1;
+			}
+			if ((fd = open(path, O_WRONLY)) == -1) {
+				fprintf(stderr, "opening %s failed: %m\n", path);
+				return -1;
+			}
+			if (write(fd, (*setting)->value, strlen((*setting)->value)) == -1) {
+				fprintf(stderr, "writing to %s failed: %m\n", path);
+				close(fd);
+				return -1;
+			}
+			close(fd);
+		}
+	}
+	fprintf(stderr, "done.\n");
+	fprintf(stderr, "=> setting rlimit...");
+	if (setrlimit(RLIMIT_NOFILE,
+		      & (struct rlimit) {
+			.rlim_max = FD_COUNT,
+			.rlim_cur = FD_COUNT,
+		})) {
+		fprintf(stderr, "failed: %m\n");
+		return 1;
+	}
+	fprintf(stderr, "done.\n");
+	return 0;
+}
+
+int free_resources()
+{
+	fprintf(stderr, "=> cleaning cgroups...");
+	for (struct cgrp_control **cgrp = cgrps; *cgrp; cgrp++) {
+		char dir[PATH_MAX] = {0};
+		char task[PATH_MAX] = {0};
+		int task_fd = 0;
+		if (snprintf(dir, sizeof(dir), "/sys/fs/cgroup/%s/%s",
+			     (*cgrp)->control, hostname) == -1
+		    || snprintf(task, sizeof(task), "/sys/fs/cgroup/%s/tasks",
+				(*cgrp)->control) == -1) {
+			fprintf(stderr, "snprintf failed: %m\n");
+			return -1;
+		}
+		if ((task_fd = open(task, O_WRONLY)) == -1) {
+			fprintf(stderr, "opening %s failed: %m\n", task);
+			return -1;
+		}
+		if (write(task_fd, "0", 2) == -1) {
+			fprintf(stderr, "writing to %s failed: %m\n", task);
+			close(task_fd);
+			return -1;
+		}
+		close(task_fd);
+		if (rmdir(dir)) {
+			fprintf(stderr, "rmdir %s failed: %m", dir);
+			return -1;
+		}
+	}
+	fprintf(stderr, "done.\n");
+	return 0;
+}
+
+/* Chuong trinh se duoc chay trong container moi duoc tao */
 static int childFunc(void *arg) {
     char ch;
     char **argv = arg;
 
-    /* Wait until the parent has updated the UID and GID mappings. See
-       the comment in main(). We wait for end of file on a pipe that will
-       be closed by the parent process once it has updated the mappings. */
+    /* Child process trong NS moi se doi parrent trong host NS mapping xong UID vs GID
+       Cu the, lenh read() tu mot dau cua pipiline se doi cho toi khi nao dau ben kia 
+       cos EOF, dong nghia voi parrent prcoess close() dau ghi cua pipeline*/
 
-    close(checkpoint[1]);    /* Close our descriptor for the write end
-                                   of the pipe so that we see EOF when
-                                   parent closes its descriptor */
+    close(checkpoint[1]);    /* child process khong can ghi vao pipeline nen ta close*/
     if (read(checkpoint[0], &ch, 1) != 0) {
         fprintf(stderr, "Failure in child: read from pipe returned != 0\n");
         exit(EXIT_FAILURE);
     }
+
+    #if TEST1	
+    clock_t begin = clock();
+    printf("CLOCKS_PER_SEC %ld \n",CLOCKS_PER_SEC);
+    printf("bat dau qua trinh setup child process %ld \n",begin);
+    #endif
 
     printf("[In child namespace] childFunc(): PID  = %ld\n", (long) getpid());
     printf("[In child namespace] childFunc(): PPID = %ld\n", (long) getppid());
 
     struct utsname uts;
 
-    /* Change hostname in UTS namespace of child */
+    /* Doi hostname cho container vi ta da tao hostname NS*/
 
     if (sethostname(hostname, strlen(hostname)) == -1)
         errExit("sethostname");
 
-    /* Retrieve and display hostname */
+    /* Hien thi hostname cua container*/
 
     if (uname(&uts) == -1)
         errExit("uname");
     printf("[In child namespace] uts.nodename in child:  %s\n", uts.nodename);
 
-    /* set various mount points and network interfaces */
+    /* Mount lai filesystem cho mount NS va tao interface moi cho network NS */
 
     if (pivot_root("./rootfs", "./rootfs/.old") < 0) {
         errExit("error pivot");
     }
+    /*proc la mot loai filesystem dac biet nen can mount rieng*/
     if (mount("proc", "/proc", "proc", 0, NULL) < 0)
         errExit("error mounting new procfs");
 
-    //change to root dir, man page for pivot_root suggests this
+    //cap nhat lai root cho container
     chdir("/");
-    
+
+    //umount thu muc trung gian de dam bao bao mat 
     if (umount2("/.old", MNT_DETACH) < 0)
         errExit("error unmount old");
 
+    // kich hoat veth cho container
     system("ip link set veth1 up");
 
     char *ip_cmd;
     asprintf(&ip_cmd, "ip addr add %s/24 dev veth1", argv[0]);
-    system(ip_cmd);
-    system("ip route add default via 10.240.0.1 dev veth1");
+    system(ip_cmd); //them ip moi do user setup cho container
+    system("ip route add default via 10.240.0.1 dev veth1"); // them route, BRIGE co the hieu nhu mot router cho container, veth1 nhu duong noi giua container va BRIGE
+
+    #if TEST1
+	    int fd = open("/home/output.txt",O_RDWR );
+    clock_t end = clock();
+    dprintf(fd,"child process setup xong cho child process %ld \n",end);
+    close(fd);
+    #endif 
 
     execvp(argv[1], &argv[1]);
     errExit("execvp");
@@ -225,9 +383,17 @@ static int childFunc(void *arg) {
 
 #define STACK_SIZE (1024 * 1024)
 
-static char child_stack[STACK_SIZE];    /* Space for child's stack */
+static char child_stack[STACK_SIZE];    /* STACK SIZE thay doi tuy theo phan cung va kernel, tu 1MB den 8MB*/
 
 int main(int argc, char *argv[]) {
+
+    #if TEST1
+    int fd = open("/home/aothatday/hdd/containers_basics/parent.txt",O_RDWR);
+    clock_t begin = clock();
+    dprintf(fd,"CLOCKS_PER_SEC %ld \n",CLOCKS_PER_SEC);
+    dprintf(fd,"bat dau qua trinh setup cua parent process %ld \n",begin);
+    #endif
+
     pid_t child_pid;
     char *uid_map, *gid_map;
     const int MAP_BUF_SIZE = 100;
@@ -236,35 +402,23 @@ int main(int argc, char *argv[]) {
 
     srand(time(0));
 
-    /* Parse command-line options. The initial '+' character in
-       the final getopt() argument prevents GNU-style permutation
-       of command-line options. That's useful, since sometimes
-       the 'command' to be executed by this program itself
-       has command-line options. We don't want getopt() to treat
-       those as options to this program. */
-
 
     if (argc < 2) {
         usage(argv[0]);
     }
 
-    /* We use a pipe to synchronize the parent and child, in order to
-       ensure that the parent sets the UID and GID maps before the child
-       calls execve(). This ensures that the child maintains its
-       capabilities during the execve() in the common case where we
-       want to map the child's effective user ID to 0 in the new user
-       namespace. Without this synchronization, the child would lose
-       its capabilities if it performed an execve() with nonzero
-       user IDs (see the capabilities(7) man page for details of the
-       transformation of a process's capabilities during execve()). */
+    /* pipeline duoc dung de dong bo hoa giua parent va child NS. Chung ta can thuc thi chuong trinh trong container bang execvp() sau khi parrent process  
+da mapping xong UID va GID cho child process trong NS moi. Dieu nay dam bao cac quyen duoc cap cho container khong bi mat di khi thuc thi execvp()*/
 
     if (pipe(checkpoint) == -1)
         errExit("pipe");
 
+    resources();
+
 //    system("mount --make-rprivate  /");
     printf("[In main namespace] starting...\n");
     create_peer();
-
+// clone process moi trong 6 loai NS moi
     child_pid = clone(childFunc, child_stack + STACK_SIZE,
                       SIGCHLD | CLONE_NEWIPC | CLONE_NEWNS | CLONE_NEWPID | CLONE_NEWUTS | CLONE_NEWNET | CLONE_NEWUSER,
                       &argv[1]);
@@ -274,8 +428,7 @@ int main(int argc, char *argv[]) {
     printf("[In main namespace] %s: PID of child created by clone() is %ld\n",
            argv[0], (long) child_pid);
 
-    /* Parent falls through to here */
-    /* Update the UID and GID maps in the child */
+    /* Mapping UID va GID cho child process trong NS moi */
 
     snprintf(map_path, PATH_MAX, "/proc/%ld/uid_map", (long) child_pid);
     snprintf(map_buf, MAP_BUF_SIZE, "0 %ld 1", (long) getuid());
@@ -289,18 +442,27 @@ int main(int argc, char *argv[]) {
     gid_map = map_buf;
     update_map(gid_map, map_path);
 
-    /* assign child container's veth interface to newly created network namespace */
+    /* gan PID cua child process cho veth */
     network_setup(child_pid);
 
-    /* Close the write end of the pipe, to signal to the child that we
-   have updated the UID and GID maps */
+    /* Dong dau ghi cua pipeline, bao hieu cho child process qua trinh mapping da ket thuc */
+
+    #if TEST1
+    clock_t end = clock();
+    dprintf(fd,"parent process setup xong cho child process %ld \n",end);
+    close(fd);
+    #endif 
 
     close(checkpoint[1]);
 
 
-    if (waitpid(child_pid, NULL, 0) == -1)      /* Wait for child */
+    if (waitpid(child_pid, NULL, 0) == -1)      /* doi child process ket thuc */
         errExit("waitpid");
 
     printf("[In main namespace] %s: terminating\n", argv[0]);
+
+	free_resources();
+
     exit(EXIT_SUCCESS);
 }
+
